@@ -28,93 +28,126 @@ window.ScriptUtils=(function(){
   function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
   function formatRich(tpl,map){ const plain=format(tpl,map||{}); let html=escapeHtml(plain); html=html.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>'); html=html.replace(/__(.+?)__/g,'<strong>$1</strong>'); return html; }
   function keyFor(onderdeel){ return 'fields:'+onderdeel; }
-  function readData(onderdeel){ try{ return JSON.parse(localStorage.getItem(keyFor(onderdeel))||'{}'); }catch(e){ return {getBundleTexts,setBundleTexts,format,formatRich,keyFor,readData,writeData,allOnderdeelKeys,getOnderdeelList,setOnderdeelList,resetOnderdeelList,normalizeOnderdeelName}; } }
+  function readData(onderdeel){
+    // Onderdeel keys are typically already UPPERCASE (see form.html), but we keep it generic.
+    const k = keyFor(onderdeel);
+    try{
+      const raw = localStorage.getItem(k);
+      let parsed = {};
+      if(raw){
+        parsed = JSON.parse(raw||'{}')||{};
+        if(parsed && Object.keys(parsed).length){ return parsed; }
+      }
+      // If nothing (or only an empty object) exists under the current key, try legacy keys
+      // and migrate found data to the new key.
+      const base = String(onderdeel||'');
+      const variants = new Set([base]);
+
+      const swaps = [
+        ['TEAM SPRINT','TEAM PURSUIT'],
+        ['WOMEN','VROUWEN'],
+        ['MEN','MANNEN']
+      ];
+      // generate combinations
+      for(const [from,to] of swaps){
+        const cur = Array.from(variants);
+        for(const v of cur){
+          if(v.includes(from)) variants.add(v.split(from).join(to));
+        }
+      }
+
+      for(const v of variants){
+        if(v===base) continue;
+        const r = localStorage.getItem(keyFor(v));
+        if(!r) continue;
+        const d = JSON.parse(r||'{}')||{};
+        if(d && Object.keys(d).length){
+          // migrate
+          localStorage.setItem(k, JSON.stringify(d));
+          return d;
+        }
+      }
+      return parsed||{};
+    }catch(e){
+      return {};
+    }
+  }
   function writeData(onderdeel,data){ localStorage.setItem(keyFor(onderdeel), JSON.stringify(data||{})); }
-  const ONDERDELEN_KEY='onderdelen_list';
-  const DEFAULT_ONDERDELEN=["500 Meter WOMEN", "1000 Meter WOMEN", "1500 Meter WOMEN", "3000 Meter WOMEN", "5000 Meter WOMEN", "Mass Start WOMEN", "500 Meter MEN", "1000 Meter MEN", "1500 Meter MEN", "5000 Meter MEN", "10000 Meter MEN", "Mass Start MEN", "Team Sprint MEN", "Team Sprint WOMEN"];
+  
+  // --- Onderdelen (editable + shareable via JSON export/import on onderdelen.html) ---
+  const ONDERDELEN_KEY = 'onderdelen:list';
+
+  function defaultOnderdelen(){
+    return [
+      "500 Meter WOMEN",
+      "1000 Meter WOMEN",
+      "1500 Meter WOMEN",
+      "3000 Meter WOMEN",
+      "5000 Meter WOMEN",
+      "Mass Start WOMEN",
+      "500 Meter MEN",
+      "1000 Meter MEN",
+      "1500 Meter MEN",
+      "5000 Meter MEN",
+      "10000 Meter MEN",
+      "Mass Start MEN",
+      "Team Sprint MEN",
+      "Team Sprint WOMEN"
+    ];
+  }
 
   function normalizeOnderdeelName(name){
-    if(name==null) return '';
-    let s=String(name).trim().replace(/\s+/g,' ');
-    // Enforce requested naming conventions
-    s=s.replace(/\bVROUWEN\b/gi,'WOMEN').replace(/\bVrouwen\b/g,'WOMEN');
-    s=s.replace(/\bMANNEN\b/gi,'MEN').replace(/\bMannen\b/g,'MEN');
-    s=s.replace(/Team\s+Pursuit/gi,'Team Sprint');
+    let s = String(name||'').trim().replace(/\s+/g,' ');
+    if(!s) return '';
+    // normalize labels
+    s = s.replace(/\bteam\s+pursuit\b/ig,'Team Sprint');
+    s = s.replace(/\bvrouwen\b/ig,'WOMEN').replace(/\bmannen\b/ig,'MEN');
+    s = s.replace(/\bVROUWEN\b/g,'WOMEN').replace(/\bMANNEN\b/g,'MEN');
+    // clean double spaces after replacements
+    s = s.replace(/\s+/g,' ').trim();
     return s;
   }
 
-  function normalizeOnderdeelList(list){
-    const out=[];
-    const seen=new Set();
-    (Array.isArray(list)?list:[]).forEach(item=>{
-      const s=normalizeOnderdeelName(item);
-      if(!s) return;
-      const key=s.toLowerCase();
-      if(seen.has(key)) return;
-      seen.add(key);
-      out.push(s);
-    });
+  function uniqPreserve(arr){
+    const seen = new Set();
+    const out = [];
+    for(const x of arr){
+      if(!x) continue;
+      const k = x;
+      if(seen.has(k)) continue;
+      seen.add(k);
+      out.push(x);
+    }
     return out;
   }
 
-  function migrateOnderdeelData(oldName,newName){
+  function getOnderdelen(){
     try{
-      if(!oldName||!newName||oldName===newName) return;
-      const oldKey=keyFor(oldName);
-      const newKey=keyFor(newName);
-      const oldVal=localStorage.getItem(oldKey);
-      if(oldVal==null) return;
-      const newVal=localStorage.getItem(newKey);
-      if(newVal==null) localStorage.setItem(newKey, oldVal);
-    }catch(e){}
+      const raw = localStorage.getItem(ONDERDELEN_KEY);
+      if(!raw) return defaultOnderdelen();
+      const arr = JSON.parse(raw);
+      if(!Array.isArray(arr)) return defaultOnderdelen();
+      const cleaned = uniqPreserve(arr.map(normalizeOnderdeelName).filter(Boolean));
+      return cleaned.length ? cleaned : defaultOnderdelen();
+    }catch(e){
+      return defaultOnderdelen();
+    }
   }
 
-  function migrateStandardOnderdelen(){
-    const legacy = [
-      ["500 Meter WOMEN","500 Meter WOMEN"],
-      ["1000 Meter WOMEN","1000 Meter WOMEN"],
-      ["1500 Meter WOMEN","1500 Meter WOMEN"],
-      ["3000 Meter WOMEN","3000 Meter WOMEN"],
-      ["5000 Meter WOMEN","5000 Meter WOMEN"],
-      ["Mass Start WOMEN","Mass Start WOMEN"],
-      ["500 Meter MEN","500 Meter MEN"],
-      ["1000 Meter MEN","1000 Meter MEN"],
-      ["1500 Meter MEN","1500 Meter MEN"],
-      ["5000 Meter MEN","5000 Meter MEN"],
-      ["10000 Meter MEN","10000 Meter MEN"],
-      ["Mass Start MEN","Mass Start MEN"],
-      ["Team Sprint MEN","Team Sprint MEN"],
-      ["Team Sprint WOMEN","Team Sprint WOMEN"],
-    ];
-    legacy.forEach(([a,b])=>migrateOnderdeelData(a,b));
+  function setOnderdelen(list){
+    const arr = (Array.isArray(list) ? list : [])
+      .map(normalizeOnderdeelName)
+      .filter(Boolean);
+    const cleaned = uniqPreserve(arr);
+    localStorage.setItem(ONDERDELEN_KEY, JSON.stringify(cleaned.length ? cleaned : defaultOnderdelen()));
+    return getOnderdelen();
   }
 
-  function getOnderdeelList(){
-    migrateStandardOnderdelen();
-    let list=null;
-    try{ list=JSON.parse(localStorage.getItem(ONDERDELEN_KEY)||'null'); }catch(e){ list=null; }
-    if(!Array.isArray(list)) list=DEFAULT_ONDERDELEN;
-    const normalized=normalizeOnderdeelList(list);
-    try{
-      const asJson=JSON.stringify(normalized);
-      if(localStorage.getItem(ONDERDELEN_KEY)!==asJson) localStorage.setItem(ONDERDELEN_KEY, asJson);
-    }catch(e){}
-    return normalized;
+  function resetOnderdelen(){
+    localStorage.removeItem(ONDERDELEN_KEY);
+    return getOnderdelen();
   }
 
-  function setOnderdeelList(list){
-    migrateStandardOnderdelen();
-    const normalized=normalizeOnderdeelList(list);
-    localStorage.setItem(ONDERDELEN_KEY, JSON.stringify(normalized));
-    return normalized;
-  }
-
-  function resetOnderdeelList(){
-    localStorage.setItem(ONDERDELEN_KEY, JSON.stringify(DEFAULT_ONDERDELEN));
-    migrateStandardOnderdelen();
-    return DEFAULT_ONDERDELEN.slice();
-  }
-
-  function allOnderdeelKeys(){ return getOnderdeelList(); }
-  return {getBundleTexts,setBundleTexts,format,formatRich,keyFor,readData,writeData,allOnderdeelKeys};
+function allOnderdeelKeys(){ return getOnderdelen(); }
+  return {getBundleTexts,setBundleTexts,format,formatRich,keyFor,readData,writeData,allOnderdeelKeys,getOnderdelen,setOnderdelen,resetOnderdelen,defaultOnderdelen,normalizeOnderdeelName};
 })();

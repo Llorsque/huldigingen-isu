@@ -1,41 +1,125 @@
-<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Onderdelen bewerken</title><link rel="stylesheet" href="./assets/styles.css"></head>
-<body><header class="header"><div class="header-inner"><div class="brand"><span class="dot"></span> Onderdelen bewerken</div>
-<div class="toolbar"><a class="nav" href="./index.html">Onderdeel kiezen</a><a class="nav" href="./overzicht.html">Medaillespiegel</a><a class="nav" href="./edit.html">Teksten bewerken</a><a class="nav" href="./pr.html">PR-overzicht</a></div></div></header>
-<div class="container"><div class="card">
-  <h1>Onderdelen</h1>
-  <p class="small">1 regel = 1 onderdeel. Deze lijst bepaalt wat je in de dropdown ziet. Tip: gebruik <strong>WOMEN</strong> en <strong>MEN</strong>.</p>
-  <label for="onderdelen">Lijst</label>
-  <textarea id="onderdelen" style="min-height:260px;width:100%" placeholder="Bijv.&#10;500 Meter WOMEN&#10;1000 Meter WOMEN&#10;..."></textarea>
-  <div style="height:12px"></div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap">
-    <button id="save">Opslaan</button>
-    <button class="secondary" id="reset">Reset naar standaard</button>
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Onderdelen bewerken</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+<header class="header">
+  <div class="header-inner">
+    <div class="brand"><span class="dot"></span> Onderdelen bewerken</div>
+    <div class="toolbar">
+      <a class="nav" href="./index.html">Onderdeel kiezen</a>
+      <a class="nav" href="./overzicht.html">Medaillespiegel</a>
+      <a class="nav" href="./edit.html">Teksten bewerken</a><a class="nav" href="./onderdelen.html">Onderdelen bewerken</a>
+      <a class="nav" href="./pr.html">PR-overzicht</a>
+    </div>
   </div>
-  <p class="small" style="margin-top:10px">Na opslaan wordt de lijst direct gebruikt in <em>Onderdeel kiezen</em>.</p>
-</div></div>
+</header>
+
+<div class="container">
+  <div class="card">
+    <h1>Onderdelenlijst</h1>
+    <p class="small">
+      1 regel = 1 onderdeel. Opslaan zet de lijst lokaal in je browser. Met export/import kun je dezelfde onderdelenlijst op een andere laptop gebruiken.
+    </p>
+
+    <label for="onderdelenText"><strong>Onderdelen</strong></label>
+    <textarea id="onderdelenText" style="width:100%;min-height:320px;padding:12px;border:1px solid var(--border);border-radius:14px;font-family:inherit;line-height:1.4"></textarea>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center">
+      <button id="saveBtn">Opslaan</button>
+      <button class="secondary" id="resetBtn" type="button">Reset naar standaard</button>
+      <button class="secondary" id="exportBtn" type="button">JSON export</button>
+
+      <input id="importFile" type="file" accept="application/json" style="display:none" />
+      <button class="secondary" id="importBtn" type="button">JSON import</button>
+
+      <span id="status" class="small" style="margin-left:auto"></span>
+    </div>
+
+    <div style="height:10px"></div>
+    <p class="small">
+      Let op: we normaliseren automatisch <strong>VROUWEN/Vrouwen → WOMEN</strong>, <strong>MANNEN/Mannen → MEN</strong> en <strong>Team Pursuit → Team Sprint</strong> bij opslaan/import.
+    </p>
+  </div>
+</div>
+
 <footer>© 2025 – Huldiging Scripts</footer>
+
 <script src="./assets/app.js"></script>
 <script>
-(function(){
-  const ta=document.getElementById('onderdelen');
-  function load(){
-    const list=ScriptUtils.getOnderdeelList();
-    ta.value=list.join('\n');
+  const ta = document.getElementById('onderdelenText');
+  const status = document.getElementById('status');
+
+  function setStatus(msg){
+    status.textContent = msg || '';
+    if(msg){ setTimeout(()=>{ if(status.textContent===msg) status.textContent=''; }, 2500); }
   }
-  load();
 
-  document.getElementById('save').addEventListener('click', function(){
-    const lines=ta.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-    const saved=ScriptUtils.setOnderdeelList(lines);
-    ta.value=saved.join('\n');
-    alert('Opgeslagen.');
+  function linesToList(){
+    return ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+  }
+
+  function render(){
+    ta.value = ScriptUtils.getOnderdelen().join('\n');
+  }
+
+  document.getElementById('saveBtn').addEventListener('click', () => {
+    const saved = ScriptUtils.setOnderdelen(linesToList());
+    ta.value = saved.join('\n');
+    setStatus('Opgeslagen ✅');
   });
 
-  document.getElementById('reset').addEventListener('click', function(){
-    const list=ScriptUtils.resetOnderdeelList();
-    ta.value=list.join('\n');
-    alert('Teruggezet naar standaard.');
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    const saved = ScriptUtils.resetOnderdelen();
+    ta.value = saved.join('\n');
+    setStatus('Teruggezet naar standaard ✅');
   });
-})();
-</script></body></html>
+
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const onderdelen = ScriptUtils.setOnderdelen(linesToList()); // normalize & store, then export
+    const payload = {
+      version: 1,
+      createdAt: new Date().toISOString(),
+      onderdelen
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'onderdelen.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+    setStatus('JSON geëxporteerd ✅');
+  });
+
+  document.getElementById('importBtn').addEventListener('click', () => {
+    document.getElementById('importFile').click();
+  });
+
+  document.getElementById('importFile').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+
+    try{
+      const text = await file.text();
+      const obj = JSON.parse(text);
+      const list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.onderdelen) ? obj.onderdelen : null);
+      if(!list) throw new Error('JSON heeft geen onderdelenlijst gevonden.');
+      const saved = ScriptUtils.setOnderdelen(list);
+      ta.value = saved.join('\n');
+      setStatus('JSON geïmporteerd ✅');
+    }catch(err){
+      alert('Import mislukt: ' + (err && err.message ? err.message : err));
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>
